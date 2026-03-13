@@ -1,0 +1,15 @@
+# ── Core API framework ────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+python-multipart
+Pillow
+
+# ── ML inference stack ────────────────────────────────────────────────────────
+# Install these when running with real model inference (instead of mock mode).
+# Comment them out if you only need the mock API server.
+torch
+torchvision
+torchxrayvision
+grad-cam
+scikit-image
+opencv-python-headless
