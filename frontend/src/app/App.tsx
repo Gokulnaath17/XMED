@@ -1,8 +1,8 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Play, Loader2, RotateCcw, ChevronLeft, ChevronRight,
-  Zap, Upload, Settings, BarChart2, Cpu
+  Loader2, RotateCcw, ChevronLeft, ChevronRight,
+  Zap, Upload, Settings, BarChart2, Cpu, CheckCircle2
 } from 'lucide-react';
 import { TopNav } from './components/TopNav';
 import { ImageUploader } from './components/ImageUploader';
@@ -10,8 +10,8 @@ import { ModelSelector } from './components/ModelSelector';
 import { ImageViewer } from './components/ImageViewer';
 import { ResultsPanel } from './components/ResultsPanel';
 import {
-  AnalysisState, AnalysisResult, HistoryEntry, ViewerLayers,
-  MODELS, CLASSES, ANALYSIS_STEPS,
+  AnalysisState, AnalysisResult, HistoryEntry, ViewerLayers, ProgressStep,
+  MODELS, CLASSES, ANALYSIS_STEPS, MODEL_INIT_STEPS,
 } from './types';
 
 
@@ -22,6 +22,8 @@ export default function App() {
   const [selectedModelId, setSelectedModelId] = useState<string>('densenet121-res224-all');
   const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
   const [currentStep, setCurrentStep] = useState<number>(0);
+  const [analysisSteps, setAnalysisSteps] = useState<ProgressStep[]>(ANALYSIS_STEPS);
+  const [modelReadyMap, setModelReadyMap] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [layers, setLayers] = useState<ViewerLayers>({ original: true, gradcam: true, segmentation: true });
@@ -29,9 +31,43 @@ export default function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const progressTokenRef = useRef(0);
 
   const handleLayerToggle = useCallback((layer: keyof ViewerLayers) => {
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchSteps = async () => {
+      try {
+        const response = await fetch('/api/v1/analysis/steps');
+        if (!response.ok) {
+          throw new Error(`Failed to load steps: ${response.statusText}`);
+        }
+        const data = await response.json();
+        const steps: ProgressStep[] = (data.steps || [])
+          .map((step: any) => ({
+            id: step.id,
+            label: step.label,
+            description: step.description ?? '',
+            durationMs: step.duration_ms ?? step.durationMs ?? 600,
+          }))
+          .filter((step: ProgressStep) => step.id && step.label);
+
+        if (!cancelled && steps.length) {
+          setAnalysisSteps(steps);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch analysis steps, using defaults.', error);
+      }
+    };
+
+    fetchSteps();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleImageUpload = useCallback((dataUrl: string) => {
@@ -48,36 +84,66 @@ export default function App() {
     setCurrentStep(0);
   }, []);
 
-  const runAnalysis = useCallback(async () => {
-    if (!uploadedImage || analysisState === 'processing') return;
+  const stopProgress = useCallback(() => {
+    progressTokenRef.current += 1;
+  }, []);
 
-    setAnalysisState('processing');
+  const startProgress = useCallback((steps: ProgressStep[]) => {
+    if (!steps.length) return;
+    const token = ++progressTokenRef.current;
+    (async () => {
+      for (let i = 0; i < steps.length; i += 1) {
+        if (progressTokenRef.current !== token) return;
+        setCurrentStep(i);
+        const duration = steps[i]?.durationMs ?? 600;
+        await delay(duration);
+      }
+    })();
+  }, []);
+
+  const runAnalysis = useCallback(async () => {
+    if (!uploadedImage || analysisState === 'processing' || analysisState === 'initializing') return;
+
+    setAnalysisState('initializing');
     setResult(null);
     setCurrentStep(0);
     setLayers({ original: true, gradcam: false, segmentation: false });
 
     try {
-      // 1. Convert Base64 dataURL to Blob
+      // Step 1: Initialize model (may download weights)
+      startProgress(MODEL_INIT_STEPS);
+      const initResponse = await fetch(`/api/v1/models/${selectedModelId}/initialize`, {
+        method: 'POST',
+      });
+      stopProgress();
+
+      if (!initResponse.ok) {
+        const errorData = await initResponse.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Init error: ${initResponse.statusText}`);
+      }
+
+      setModelReadyMap((prev) => ({ ...prev, [selectedModelId]: true }));
+
+      // Step 2: Prepare inference request
+      setAnalysisState('processing');
+      setCurrentStep(0);
+
       const res = await fetch(uploadedImage);
       const blob = await res.blob();
 
-      // 2. Prepare FormData
       const formData = new FormData();
       formData.append('image', blob, 'image.jpg');
       formData.append('model_id', selectedModelId);
 
-      // Simulate steps progress while waiting for API
-      const progressTimer = setInterval(() => {
-        setCurrentStep((prev) => Math.min(prev + 1, ANALYSIS_STEPS.length - 1));
-      }, 800);
+      // Step 3: Show backend-driven steps while waiting for API
+      startProgress(analysisSteps);
 
-      // 3. Call actual API
       const apiResponse = await fetch('/api/v1/analyze', {
         method: 'POST',
         body: formData,
       });
 
-      clearInterval(progressTimer);
+      stopProgress();
 
       if (!apiResponse.ok) {
         const errorData = await apiResponse.json().catch(() => ({}));
@@ -85,7 +151,7 @@ export default function App() {
       }
 
       const backendResult = await apiResponse.json();
-      setCurrentStep(ANALYSIS_STEPS.length - 1); 
+      setCurrentStep(Math.max(analysisSteps.length - 1, 0));
 
       const newResult: AnalysisResult = {
         id: backendResult.id,
@@ -94,7 +160,7 @@ export default function App() {
         probabilities: backendResult.probabilities.map((p: any) => ({
           label: p.label,
           value: p.probability,
-          color: CLASSES.includes(p.label) ? undefined : '#64748b' // Let UI handle color if needed
+          color: CLASSES.includes(p.label) ? undefined : '#64748b',
         })),
         inferenceTime: backendResult.inference_time,
         heatmapDataUrl: `data:image/png;base64,${backendResult.heatmap_image}`,
@@ -113,7 +179,6 @@ export default function App() {
       await delay(400);
       setLayers({ original: true, gradcam: true, segmentation: true });
 
-      // Add to session history
       const histEntry: HistoryEntry = {
         id: newResult.id,
         thumbnailUrl: uploadedImage,
@@ -124,13 +189,14 @@ export default function App() {
         result: newResult,
       };
       setHistory((prev) => [histEntry, ...prev.slice(0, 9)]);
-
     } catch (error: any) {
+      stopProgress();
       console.error('Analysis failed', error);
       setAnalysisState('idle');
+      setCurrentStep(0);
       alert(`Analysis failed: ${error.message}`);
     }
-  }, [uploadedImage, selectedModelId, analysisState]);
+  }, [uploadedImage, selectedModelId, analysisState, analysisSteps, startProgress, stopProgress]);
 
   const handleSelectHistory = useCallback((entry: HistoryEntry) => {
     setResult(entry.result);
@@ -141,11 +207,15 @@ export default function App() {
   }, []);
 
   const systemStatus =
-    analysisState === 'processing' ? 'processing' : uploadedImage ? 'online' : 'online';
+    analysisState === 'processing' || analysisState === 'initializing'
+      ? 'processing'
+      : uploadedImage
+      ? 'online'
+      : 'online';
 
   const selectedModel = MODELS.find((m) => m.id === selectedModelId)!;
 
-  const canAnalyze = !!uploadedImage && analysisState !== 'processing';
+  const canAnalyze = !!uploadedImage && analysisState !== 'processing' && analysisState !== 'initializing';
 
   const isDark = theme === 'dark';
 
@@ -265,13 +335,61 @@ export default function App() {
                     models={MODELS}
                     selectedModelId={selectedModelId}
                     onSelectModel={setSelectedModelId}
-                    disabled={analysisState === 'processing'}
+                    disabled={analysisState === 'processing' || analysisState === 'initializing'}
                     theme={theme}
                   />
                 </div>
 
                 {/* Divider */}
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }} />
+
+                {/* Model initialization status */}
+                <div
+                  className="rounded-xl p-3 space-y-2"
+                  style={{
+                    background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.6)',
+                    border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.08)'}`,
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Cpu size={11} style={{ color: '#22d3ee' }} />
+                    <span
+                      className="text-xs tracking-widest uppercase"
+                      style={{ color: '#22d3ee', fontSize: '10px', letterSpacing: '0.1em' }}
+                    >
+                      Model Initialization
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    {analysisState === 'initializing' ? (
+                      <>
+                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                          <Loader2 size={12} style={{ color: '#fbbf24' }} />
+                        </motion.div>
+                        <span style={{ color: isDark ? '#cbd5f5' : '#334155' }}>
+                          Downloading weights & warming up
+                        </span>
+                      </>
+                    ) : modelReadyMap[selectedModelId] ? (
+                      <>
+                        <CheckCircle2 size={12} style={{ color: '#34d399' }} />
+                        <span style={{ color: isDark ? '#94a3b8' : '#475569' }}>
+                          Model ready (cached)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ background: 'rgba(148,163,184,0.6)' }}
+                        />
+                        <span style={{ color: isDark ? '#64748b' : '#475569' }}>
+                          Will initialize on analysis
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
 
                 {/* Analyze button */}
                 <div className="space-y-2 pb-4">
@@ -304,7 +422,14 @@ export default function App() {
                         transition={{ duration: 2.5, repeat: Infinity, ease: 'linear', repeatDelay: 1 }}
                       />
                     )}
-                    {analysisState === 'processing' ? (
+                    {analysisState === 'initializing' ? (
+                      <>
+                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                          <Loader2 size={16} />
+                        </motion.div>
+                        <span>Initializing Model...</span>
+                      </>
+                    ) : analysisState === 'processing' ? (
                       <>
                         <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
                           <Loader2 size={16} />
@@ -419,6 +544,9 @@ export default function App() {
                   Ready for analysis
                 </motion.span>
               )}
+              {analysisState === 'initializing' && (
+                <span style={{ color: '#fbbf24' }}>Initializing model...</span>
+              )}
               {analysisState === 'processing' && (
                 <span style={{ color: '#fbbf24' }}>Processing…</span>
               )}
@@ -437,6 +565,9 @@ export default function App() {
               result={result}
               analysisState={analysisState}
               currentStep={currentStep}
+              progressSteps={analysisState === 'initializing' ? MODEL_INIT_STEPS : analysisSteps}
+              progressTitle={analysisState === 'initializing' ? 'MODEL INITIALIZATION' : 'INFERENCE PIPELINE'}
+              progressIndeterminate={analysisState === 'initializing'}
               layers={layers}
               onLayerToggle={handleLayerToggle}
               heatmapOpacity={heatmapOpacity}

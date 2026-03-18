@@ -78,11 +78,23 @@ class ClassesResponse(BaseModel):
 class StepInfo(BaseModel):
     id: str
     label: str
+    description: str
     duration_ms: int
 
 
 class StepsResponse(BaseModel):
     steps: List[StepInfo]
+
+
+# ---------------------------------------------------------------------------
+# POST /models/{model_id}/initialize
+# ---------------------------------------------------------------------------
+
+class ModelInitResponse(BaseModel):
+    model_id: str
+    status: str
+    was_cached: bool
+    duration_seconds: float
 
 
 # ---------------------------------------------------------------------------

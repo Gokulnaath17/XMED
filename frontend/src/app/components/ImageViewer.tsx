@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Eye, EyeOff, ZoomIn, ZoomOut, Maximize2, Layers, Sliders, RotateCcw } from 'lucide-react';
-import { ViewerLayers, AnalysisResult, ANALYSIS_STEPS } from '../types';
+import { ViewerLayers, AnalysisResult, ProgressStep } from '../types';
 import { AnalysisProgress } from './AnalysisProgress';
 
 interface ImageViewerProps {
@@ -9,6 +9,9 @@ interface ImageViewerProps {
   result: AnalysisResult | null;
   analysisState: string;
   currentStep: number;
+  progressSteps: ProgressStep[];
+  progressTitle?: string;
+  progressIndeterminate?: boolean;
   layers: ViewerLayers;
   onLayerToggle: (layer: keyof ViewerLayers) => void;
   heatmapOpacity: number;
@@ -26,6 +29,9 @@ export function ImageViewer({
   result,
   analysisState,
   currentStep,
+  progressSteps,
+  progressTitle,
+  progressIndeterminate = false,
   layers,
   onLayerToggle,
   heatmapOpacity,
@@ -114,7 +120,7 @@ export function ImageViewer({
   };
 
   const isEmpty = !uploadedImage;
-  const isProcessing = analysisState === 'processing';
+  const isProcessing = analysisState === 'processing' || analysisState === 'initializing';
   const isDone = analysisState === 'complete';
 
   return (
@@ -311,9 +317,11 @@ export function ImageViewer({
 
             {/* Processing overlay */}
             <AnalysisProgress
-              steps={ANALYSIS_STEPS}
+              steps={progressSteps}
               currentStep={currentStep}
               isVisible={isProcessing}
+              title={progressTitle}
+              indeterminate={progressIndeterminate}
             />
           </motion.div>
         )}

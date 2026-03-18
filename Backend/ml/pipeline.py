@@ -23,6 +23,8 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
+from threading import Lock
+
 from ml.model_loader import load_model
 from ml.preprocessing import preprocess_image
 from ml.inference import run_classification
@@ -39,14 +41,26 @@ from ml.visualization import (
 # Model singleton
 # ---------------------------------------------------------------------------
 _models_cache: dict = {}
+_models_lock: Lock = Lock()
 
 
 def get_models(model_id: str) -> dict:
     """Return the cached model dict, loading on first call."""
     global _models_cache
-    if model_id not in _models_cache:
-        _models_cache[model_id] = load_model(model_id)
+    if model_id in _models_cache:
+        return _models_cache[model_id]
+    with _models_lock:
+        if model_id not in _models_cache:
+            _models_cache[model_id] = load_model(model_id)
     return _models_cache[model_id]
+
+
+def preload_model(model_id: str) -> bool:
+    """Ensure model is loaded; return True if it was already cached."""
+    if model_id in _models_cache:
+        return True
+    get_models(model_id)
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -118,4 +132,3 @@ def run_inference(image_bytes: bytes, model_id: str = "densenet121-res224-all") 
         "model_id":           model_id,
         "timestamp":          datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
-

@@ -135,10 +135,40 @@ MODEL_REGISTRY: list[ModelInfo] = [
 # Pipeline steps shown in the animated progress UI during inference
 # ---------------------------------------------------------------------------
 ANALYSIS_STEPS: list[StepInfo] = [
-    StepInfo(id="preprocess",   label="Preprocessing Image",               duration_ms=400),
-    StepInfo(id="normalize",    label="Normalizing Input Tensor",          duration_ms=300),
-    StepInfo(id="forward_pass", label="Running DenseNet121 Forward Pass",  duration_ms=800),
-    StepInfo(id="gradcam",      label="Generating Grad-CAM Heatmap",       duration_ms=500),
-    StepInfo(id="segmentation", label="Running U-Net Segmentation",        duration_ms=600),
-    StepInfo(id="postprocess",  label="Post-processing Outputs",           duration_ms=300),
+    StepInfo(
+        id="preprocess",
+        label="Preprocessing Image",
+        description="Decode, resize, normalize, and tensorize input",
+        duration_ms=400,
+    ),
+    StepInfo(
+        id="classify",
+        label="Running Classifier Forward Pass",
+        description="Compute logits and top prediction on the classifier",
+        duration_ms=800,
+    ),
+    StepInfo(
+        id="gradcam",
+        label="Generating Grad-CAM Heatmap",
+        description="Backpropagate gradients to build saliency maps",
+        duration_ms=500,
+    ),
+    StepInfo(
+        id="segmentation",
+        label="Running U-Net Segmentation",
+        description="Segment anatomical regions for overlay",
+        duration_ms=600,
+    ),
+    StepInfo(
+        id="composite",
+        label="Compositing Overlays",
+        description="Blend heatmap and segmentation masks",
+        duration_ms=300,
+    ),
+    StepInfo(
+        id="finalize",
+        label="Packaging Results",
+        description="Encode assets and metrics for response",
+        duration_ms=250,
+    ),
 ]

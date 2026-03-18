@@ -6,10 +6,18 @@ interface AnalysisProgressProps {
   steps: ProgressStep[];
   currentStep: number;
   isVisible: boolean;
+  title?: string;
+  indeterminate?: boolean;
 }
 
-export function AnalysisProgress({ steps, currentStep, isVisible }: AnalysisProgressProps) {
-  const progress = Math.round(((currentStep + 1) / steps.length) * 100);
+export function AnalysisProgress({
+  steps,
+  currentStep,
+  isVisible,
+  title = 'INFERENCE PIPELINE',
+  indeterminate = false,
+}: AnalysisProgressProps) {
+  const progress = Math.round(((currentStep + 1) / Math.max(steps.length, 1)) * 100);
 
   return (
     <AnimatePresence>
@@ -61,36 +69,51 @@ export function AnalysisProgress({ steps, currentStep, isVisible }: AnalysisProg
                   className="text-xs tracking-widest uppercase"
                   style={{ color: '#22d3ee', letterSpacing: '0.15em' }}
                 >
-                  INFERENCE PIPELINE
+                  {title}
                 </span>
               </motion.div>
               <h3 className="text-base" style={{ color: '#e2e8f0' }}>
                 {steps[currentStep]?.label}
               </h3>
-              <p className="text-xs mt-1" style={{ color: '#64748b' }}>
-                {steps[currentStep]?.description}
-              </p>
+              {steps[currentStep]?.description && (
+                <p className="text-xs mt-1" style={{ color: '#64748b' }}>
+                  {steps[currentStep]?.description}
+                </p>
+              )}
             </div>
 
             {/* Progress bar */}
             <div className="mb-4">
               <div className="flex justify-between text-xs mb-1.5" style={{ color: '#475569' }}>
-                <span>Pipeline Progress</span>
-                <span style={{ color: '#22d3ee' }}>{progress}%</span>
+                <span>Progress</span>
+                <span style={{ color: '#22d3ee' }}>{indeterminate ? '…' : `${progress}%`}</span>
               </div>
               <div
                 className="h-1.5 rounded-full overflow-hidden"
                 style={{ background: 'rgba(255,255,255,0.06)' }}
               >
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{
-                    background: 'linear-gradient(90deg, #0066cc, #22d3ee)',
-                    boxShadow: '0 0 8px rgba(34,211,238,0.6)',
-                  }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.4, ease: 'easeOut' }}
-                />
+                {indeterminate ? (
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{
+                      background: 'linear-gradient(90deg, #0066cc, #22d3ee)',
+                      boxShadow: '0 0 8px rgba(34,211,238,0.6)',
+                      width: '40%',
+                    }}
+                    animate={{ x: ['-20%', '120%'] }}
+                    transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                ) : (
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{
+                      background: 'linear-gradient(90deg, #0066cc, #22d3ee)',
+                      boxShadow: '0 0 8px rgba(34,211,238,0.6)',
+                    }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.4, ease: 'easeOut' }}
+                  />
+                )}
               </div>
             </div>
 

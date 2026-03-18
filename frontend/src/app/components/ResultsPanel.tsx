@@ -71,7 +71,9 @@ function EmptyResults({ analysisState }: { analysisState: string }) {
         <BarChart2 size={28} style={{ color: 'rgba(0,212,255,0.2)', margin: 'auto' }} />
       </motion.div>
       <p className="text-xs mt-3" style={{ color: '#1e293b' }}>
-        {analysisState === 'processing'
+        {analysisState === 'initializing'
+          ? 'Initializing model and downloading weights...'
+          : analysisState === 'processing'
           ? 'Computing inference results…'
           : 'Results will appear here after analysis'}
       </p>

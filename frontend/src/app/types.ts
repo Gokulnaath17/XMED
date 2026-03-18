@@ -45,7 +45,7 @@ export interface HistoryEntry {
   result: AnalysisResult;
 }
 
-export type AnalysisState = 'idle' | 'processing' | 'complete';
+export type AnalysisState = 'idle' | 'initializing' | 'processing' | 'complete';
 
 export interface ViewerLayers {
   original: boolean;
@@ -57,7 +57,7 @@ export interface ProgressStep {
   id: string;
   label: string;
   description: string;
-  duration: number;
+  durationMs: number;
 }
 
 export const MODELS: AIModel[] = [
@@ -245,10 +245,61 @@ export const CLASS_COLORS: Record<string, string> = {
 };
 
 export const ANALYSIS_STEPS: ProgressStep[] = [
-  { id: 'preprocess', label: 'Preprocessing', description: 'Normalizing & resizing input image', duration: 600 },
-  { id: 'extract', label: 'Feature Extraction', description: 'Running forward pass through encoder layers', duration: 900 },
-  { id: 'classify', label: 'Classification', description: 'Computing output probability distribution', duration: 500 },
-  { id: 'gradcam', label: 'Grad-CAM Computation', description: 'Backpropagating gradients for saliency map', duration: 750 },
-  { id: 'segment', label: 'Anatomical Segmentation', description: 'Applying U-Net segmentation decoder', duration: 800 },
-  { id: 'finalize', label: 'Compositing Output', description: 'Overlaying heatmap and segmentation masks', duration: 450 },
+  {
+    id: 'preprocess',
+    label: 'Preprocessing Image',
+    description: 'Decode, resize, normalize, and tensorize input',
+    durationMs: 400,
+  },
+  {
+    id: 'classify',
+    label: 'Running Classifier Forward Pass',
+    description: 'Compute logits and top prediction on the classifier',
+    durationMs: 800,
+  },
+  {
+    id: 'gradcam',
+    label: 'Generating Grad-CAM Heatmap',
+    description: 'Backpropagate gradients to build saliency maps',
+    durationMs: 500,
+  },
+  {
+    id: 'segmentation',
+    label: 'Running U-Net Segmentation',
+    description: 'Segment anatomical regions for overlay',
+    durationMs: 600,
+  },
+  {
+    id: 'composite',
+    label: 'Compositing Overlays',
+    description: 'Blend heatmap and segmentation masks',
+    durationMs: 300,
+  },
+  {
+    id: 'finalize',
+    label: 'Packaging Results',
+    description: 'Encode assets and metrics for response',
+    durationMs: 250,
+  },
+];
+
+export const MODEL_INIT_STEPS: ProgressStep[] = [
+  {
+    id: 'init-cache',
+    label: 'Checking Model Cache',
+    description: 'Detecting locally available weights',
+    durationMs: 500,
+  },
+  {
+    id: 'init-download',
+    label: 'Initializing Model Weights',
+    description: 'Downloading or loading weights into memory',
+    durationMs: 1600,
+  },
+  {
+    id: 'init-warmup',
+    label: 'Warming Up Inference Graph',
+    description: 'Preparing the runtime for analysis',
+    durationMs: 700,
+  },
 ];
